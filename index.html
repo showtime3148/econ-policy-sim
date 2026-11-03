@@ -449,6 +449,28 @@ if(typeof module!=='undefined') module.exports = {SCENARIOS, CARDS, TOGGLES, tog
 
 /* ===== UI ===== */
 const KEY = 'econ-policy-sim-v2';
+/* 구글 시트 저장 주소(Apps Script 웹 앱 URL). 비워 두면 저장 기능이 꺼집니다. */
+const SHEET_URL = '';
+function postSheet(data){
+  if(!SHEET_URL) return Promise.reject(new Error('no-url'));
+  return fetch(SHEET_URL, {method:'POST', body:JSON.stringify(data)})
+    .then(r=>r.json()).then(j=>{ if(!j.ok) throw new Error(j.error||'fail'); return j; });
+}
+function sendProgress(){
+  if(!SHEET_URL || !A.sim) return;
+  const st=A.sim, last=A.log[A.log.length-1];
+  postSheet({type:'progress', sid:A.sessionId, gid:A.gid, name:A.name, team:A.team, scenario:sc().title, q:st.q,
+    g:+st.g.toFixed(1), pi:+st.pi.toFixed(1), u:+st.u.toFixed(1), fx:Math.round(st.fx), debt:+st.debt.toFixed(1),
+    score:simScore(sc(),st), lastWhy:last?last.why:''}).catch(()=>{});
+}
+function submitPayload(){
+  const s=sc(), st=A.sim;
+  return {type:'submit', sid:A.sessionId, gid:A.gid, name:A.name, team:A.team, scenario:s.title, score:simScore(s,st),
+    goals:s.goals.map(g=>goalText(g)+': '+fmt(g.k,st[g.k])+' ['+STATE_TXT[state(g,st[g.k])]+']').join(' / '),
+    diag1:A.diag.a, diag2:A.diag.b,
+    decisions:A.log.map((l,i)=>{ const h=st.hist[i+1]; return '금리 '+l.rate.toFixed(2)+'%, 지출 '+(l.spend>0?'+':'')+l.spend+'조, 세율 '+(l.tax>0?'+':'')+l.tax+'%p, 기타: '+polSummary(l)+'\n근거: '+l.why+'\n결과: 성장 '+fmt('g',h.g)+', 물가 '+fmt('pi',h.pi)+', 실업 '+fmt('u',h.u); }),
+    ref1:A.ref.a, ref2:A.ref.b, ref3:A.ref.c, report:reportText()};
+}
 const SPEND = {'-2':'대폭 축소','-1':'축소','0':'현 수준','1':'확대','2':'대폭 확대','3':'슈퍼 추경'};
 const TAX = {'-2':'대폭 감세','-1':'감세','0':'현행','1':'증세','2':'대폭 증세'};
 const MIN_WHY = 40, MIN_DIAG = 30, MIN_REF = 50;
@@ -843,8 +865,10 @@ function viewReport(){
     </div>
     <div class="card stack">
       <h2 style="font-size:18px">제출하기</h2>
-      <p class="small muted" style="margin:0">아래 버튼으로 보고서 전체를 복사해 구글 클래스룸 등에 붙여 넣으세요.</p>
-      <div class="row"><button class="btn primary" data-act="copy">보고서 텍스트 복사</button><span class="small" id="copied" role="status"></span></div>
+      ${SHEET_URL ? `<p class="small muted" style="margin:0">아래 버튼을 누르면 보고서가 선생님께 바로 전송됩니다.</p>
+      <div class="row"><button class="btn primary big" data-act="submit" ${A.submitted?'disabled':''}>${A.submitted?'제출 완료':'선생님께 제출하기'}</button><span class="small" id="sent" role="status">${A.submitted?'제출되었습니다. 다시 제출할 필요는 없습니다.':''}</span></div>
+      <p class="small muted" style="margin:0">전송이 안 될 때는 아래 버튼으로 보고서를 복사해 클래스룸에 붙여 넣으세요.</p>` : `<p class="small muted" style="margin:0">아래 버튼으로 보고서 전체를 복사해 구글 클래스룸 등에 붙여 넣으세요.</p>`}
+      <div class="row"><button class="btn ${SHEET_URL?'':'primary'}" data-act="copy">보고서 텍스트 복사</button><span class="small" id="copied" role="status"></span></div>
       <textarea class="copybox" id="copybox" readonly hidden>${esc(reportText())}</textarea>
       <div class="row"><button class="btn" data-act="newgame">새 시뮬레이션 시작</button></div>
     </div>
@@ -874,7 +898,7 @@ document.addEventListener('click', e=>{
   if(act==='start'){ syncStart();
     if(!A.gid || !A.name) return fail('학번과 이름을 입력하세요.');
     if(!A.sid) return fail('해결할 경제 상황을 하나 고르세요.');
-    resumable=null; A.sim = initSim(sc()); A.log=[]; A.draft=null; A.diag={a:'',b:''}; A.ref={a:'',b:'',c:''};
+    resumable=null; A.sessionId = Date.now().toString(36)+Math.random().toString(36).slice(2,7); A.submitted=false; A.sim = initSim(sc()); A.log=[]; A.draft=null; A.diag={a:'',b:''}; A.ref={a:'',b:'',c:''};
     return go('brief'); }
   if(act==='home'){ syncText(); return go('start'); }
   if(act==='begin'){ syncText();
@@ -886,6 +910,10 @@ document.addEventListener('click', e=>{
   if(act==='copy'){ const txt = reportText(), msg=document.getElementById('copied');
     const fallback = ()=>{ const b=document.getElementById('copybox'); b.hidden=false; b.focus(); b.select(); msg.textContent='자동 복사가 막혀 있습니다. 아래 상자의 내용을 직접 복사하세요(Ctrl+C).'; };
     try{ navigator.clipboard.writeText(txt).then(()=>{ msg.textContent='복사했습니다. 제출할 곳에 붙여 넣으세요.'; }, fallback); }catch(_){ fallback(); }
+    return; }
+  if(act==='submit'){ const msg=document.getElementById('sent'); t.disabled=true; msg.textContent='전송 중입니다…';
+    postSheet(submitPayload()).then(()=>{ A.submitted=true; save(); t.textContent='제출 완료'; msg.textContent='제출되었습니다. 다시 제출할 필요는 없습니다.'; },
+      ()=>{ t.disabled=false; msg.textContent='전송에 실패했습니다. 인터넷 연결을 확인하고 다시 누르거나, 보고서를 복사해 제출하세요.'; });
     return; }
   if(act==='newgame'){ const keep={gid:A.gid,name:A.name,team:A.team}; A=Object.assign(fresh(), keep); resumable=null; return go('start'); }
 });
@@ -907,6 +935,7 @@ document.addEventListener('submit', e=>{
   A.log.push(Object.assign({why:d.why.trim()}, pol));
   A.sim = stepSim(A.sim, pol, sc());
   A.draft = null;
+  sendProgress();
   go(A.sim.q >= 8 ? 'reflect' : 'play');
 });
 
