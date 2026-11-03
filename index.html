@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>경제정책 시뮬레이터</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* layout: 상단 회의 바 + 좌측 지표판 / 우측 정책 결정 패널, 보고서는 단일 문서 컬럼 */
+:root{
+  --bg:#eef0ec; --surface:#ffffff; --ink:#1b232b; --muted:#5b6670; --line:#d6dbd5;
+  --accent:#1f4b99; --accent-soft:#e3eaf7;
+  --ok:#1d7a4c; --ok-soft:#e1f2e8; --warn:#a66a00; --warn-soft:#fbf0d9; --bad:#b3261e; --bad-soft:#fbe4e1;
+  --font-display:'Nanum Myeongjo', 'Batang', serif;
+  --font-body:'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11161b; --surface:#1a2129; --ink:#e5e9ed; --muted:#9aa6b1; --line:#2d3640;
+    --accent:#8fb0f5; --accent-soft:#1f2c45;
+    --ok:#5cc38f; --ok-soft:#173326; --warn:#e3b04f; --warn-soft:#3a2e14; --bad:#f08a80; --bad-soft:#3e1d1a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11161b; --surface:#1a2129; --ink:#e5e9ed; --muted:#9aa6b1; --line:#2d3640;
+  --accent:#8fb0f5; --accent-soft:#1f2c45;
+  --ok:#5cc38f; --ok-soft:#173326; --warn:#e3b04f; --warn-soft:#3a2e14; --bad:#f08a80; --bad-soft:#3e1d1a;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg); color:var(--ink); font-family:var(--font-body); font-size:15px; line-height:1.6; -webkit-font-smoothing:antialiased}
+h1,h2,h3{text-wrap:balance; margin:0; line-height:1.3}
+h1,h2{font-family:var(--font-display); font-weight:800}
+button,input,textarea{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+.top{position:sticky; top:0; z-index:5; background:var(--surface); border-bottom:1px solid var(--line)}
+.top-in{max-width:1180px; margin:0 auto; padding:10px 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap}
+.brand{display:flex; gap:10px; align-items:baseline; flex-wrap:wrap}
+.brand b{font-family:var(--font-display); font-size:19px; font-weight:800}
+.brand span{color:var(--muted); font-size:13px}
+.who{font-size:13px; color:var(--muted)}
+.who strong{color:var(--ink)}
+
+main{max-width:1180px; margin:0 auto; padding:20px 16px 60px}
+.card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:18px}
+.stack{display:flex; flex-direction:column; gap:16px}
+.row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.eyebrow{font-size:12px; letter-spacing:.06em; color:var(--muted); font-weight:700}
+
+.btn{border:1px solid var(--line); background:var(--surface); border-radius:8px; padding:9px 14px; cursor:pointer; font-weight:500}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--surface); font-weight:700}
+:root[data-theme="dark"] .btn.primary{color:#0f1720}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.primary{color:#0f1720}}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn.big{padding:12px 20px; font-size:16px}
+
+label.f{display:flex; flex-direction:column; gap:6px; font-weight:500; font-size:14px}
+input[type=text],textarea{width:100%; border:1px solid var(--line); background:var(--bg); border-radius:8px; padding:9px 11px}
+textarea{min-height:96px; resize:vertical; line-height:1.55}
+.hint{font-size:12.5px; color:var(--muted); font-weight:400}
+.err{color:var(--bad); font-size:13px; min-height:1em}
+
+.pill{display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:700; padding:2px 9px; border-radius:99px; background:var(--accent-soft); color:var(--accent); white-space:nowrap}
+.pill.ok{background:var(--ok-soft); color:var(--ok)}
+.pill.warn{background:var(--warn-soft); color:var(--warn)}
+.pill.bad{background:var(--bad-soft); color:var(--bad)}
+
+/* start */
+.intro{display:grid; grid-template-columns:1.4fr 1fr; gap:16px}
+.intro h1{font-size:30px; margin-bottom:8px}
+.intro p{margin:0 0 8px; max-width:62ch}
+.roles{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px}
+.role{border-left:3px solid var(--accent); padding:4px 0 4px 10px; font-size:13.5px}
+.role b{display:block}
+.scen-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px}
+.scen{text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:8px; border:1.5px solid var(--line); background:var(--surface); border-radius:10px; padding:16px}
+.scen:hover{border-color:var(--accent)}
+.scen[aria-pressed="true"]{border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft)}
+.scen h3{font-family:var(--font-display); font-size:19px; font-weight:800}
+.scen p{margin:0; font-size:14px}
+.goal-list{display:flex; flex-wrap:wrap; gap:6px}
+.goal-list span{font-size:12px; border:1px solid var(--line); border-radius:6px; padding:1px 7px; color:var(--muted)}
+details.guide summary{cursor:pointer; font-weight:700}
+details.guide ol, details.guide ul{margin:8px 0; padding-left:20px}
+details.guide li{margin:3px 0}
+
+/* briefing */
+.paper{max-width:820px; margin:0 auto}
+.paper .mast{display:flex; justify-content:space-between; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:14px; font-size:12.5px; color:var(--muted)}
+.paper h1{font-size:30px; margin-bottom:10px}
+.paper .lead{font-size:17px; font-weight:500; margin:0 0 12px}
+.paper .body p{margin:0 0 10px}
+.ind-table{width:100%; border-collapse:collapse; font-size:14px}
+.ind-table th,.ind-table td{padding:7px 8px; border-bottom:1px solid var(--line); text-align:left}
+.ind-table td.v{text-align:right; font-variant-numeric:tabular-nums; font-weight:700}
+.tbl-wrap{overflow-x:auto}
+
+/* play */
+.status{display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; margin-bottom:14px}
+.status h2{font-size:22px}
+.dots{display:flex; gap:5px}
+.dots i{width:22px; height:6px; border-radius:3px; background:var(--line)}
+.dots i.done{background:var(--accent)}
+.dots i.now{background:var(--warn)}
+.goals{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px}
+.goal{background:var(--surface); border:1px solid var(--line); border-left-width:4px; border-radius:8px; padding:9px 12px}
+.goal.ok{border-left-color:var(--ok)} .goal.warn{border-left-color:var(--warn)} .goal.bad{border-left-color:var(--bad)}
+.goal .t{font-size:12.5px; color:var(--muted)}
+.goal .v{font-size:20px; font-weight:700; font-variant-numeric:tabular-nums}
+.play{display:grid; grid-template-columns:1fr 400px; gap:16px; align-items:start}
+.tiles{display:grid; grid-template-columns:repeat(2,1fr); gap:10px}
+.tile{background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:2px}
+.tile .h{display:flex; justify-content:space-between; gap:6px; font-size:13px; color:var(--muted)}
+.tile .v{font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; display:flex; align-items:baseline; gap:8px}
+.tile .d{font-size:12.5px; font-weight:500}
+.up{color:var(--bad)} .down{color:var(--ok)} .flat{color:var(--muted)}
+.tile.goalk{border-color:var(--accent)}
+svg.spark{width:100%; height:38px; display:block}
+.feed{border-left:4px solid var(--accent)}
+.feed h3{font-size:15px; margin-bottom:6px}
+.feed ul{margin:0; padding-left:18px}
+.feed li{margin:2px 0; font-size:14px}
+.alert{background:var(--warn-soft); border:1px solid var(--warn); color:var(--ink); border-radius:8px; padding:10px 12px; font-size:14px}
+.alert b{color:var(--warn)}
+
+.panel{display:flex; flex-direction:column; gap:14px}
+.ctl{display:flex; flex-direction:column; gap:8px; padding-bottom:14px; border-bottom:1px solid var(--line)}
+.ctl:last-of-type{border-bottom:0}
+.ctl .lab{display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+.ctl .lab b{font-size:15px}
+.ctl .lab small{color:var(--muted); font-size:12px}
+.rate{display:flex; align-items:center; gap:8px}
+.rate .val{font-size:30px; font-weight:700; font-variant-numeric:tabular-nums; min-width:96px; text-align:center}
+.rate .btn{padding:7px 10px; min-width:58px}
+.seg{display:grid; gap:4px}
+.seg button{border:1px solid var(--line); background:var(--bg); border-radius:6px; padding:6px 2px; font-size:12px; cursor:pointer; line-height:1.25}
+.seg button[aria-pressed="true"]{background:var(--accent); color:var(--surface); border-color:var(--accent); font-weight:700}
+:root[data-theme="dark"] .seg button[aria-pressed="true"]{color:#0f1720}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .seg button[aria-pressed="true"]{color:#0f1720}}
+.cards{display:flex; flex-direction:column; gap:6px; max-height:300px; overflow-y:auto; padding-right:2px}
+.pc{display:flex; gap:9px; align-items:flex-start; border:1px solid var(--line); border-radius:8px; padding:8px 10px; cursor:pointer; background:var(--bg)}
+.pc input{margin-top:4px}
+.pc b{font-size:13.5px}
+.pc .who2{font-size:11.5px; color:var(--accent); margin-left:4px}
+.pc p{margin:2px 0 0; font-size:12.5px; color:var(--muted); line-height:1.45}
+.pc.dis{opacity:.45; cursor:not-allowed}
+.pc:has(input:checked){border-color:var(--accent); background:var(--accent-soft)}
+
+.log{width:100%; border-collapse:collapse; font-size:13px}
+.log th,.log td{border-bottom:1px solid var(--line); padding:7px 6px; text-align:left; vertical-align:top}
+.log th{font-size:12px; color:var(--muted); font-weight:700; white-space:nowrap}
+.log td.n{font-variant-numeric:tabular-nums; white-space:nowrap}
+.log td.why{min-width:220px}
+
+/* report */
+.report{max-width:900px; margin:0 auto}
+.rep-head{display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-end; border-bottom:3px double var(--ink); padding-bottom:12px}
+.rep-head h1{font-size:28px}
+.score{font-size:46px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1; color:var(--accent)}
+.score small{font-size:16px; color:var(--muted)}
+.charts{display:grid; grid-template-columns:repeat(2,1fr); gap:12px}
+.chart{border:1px solid var(--line); border-radius:8px; padding:10px}
+.chart h3{font-size:14px; margin-bottom:4px}
+svg.big{width:100%; height:150px; display:block}
+.qa{border-left:3px solid var(--line); padding-left:12px}
+.qa h3{font-size:14px; color:var(--muted); margin-bottom:4px}
+.qa p{margin:0; white-space:pre-wrap}
+.rubric td,.rubric th{font-size:13px}
+.copybox{width:100%; min-height:160px; font-size:12px}
+
+@media (max-width:960px){
+  .play{grid-template-columns:1fr}
+  .panel{position:static}
+  .goals{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:720px){
+  .intro,.scen-grid,.charts{grid-template-columns:1fr}
+  .roles{grid-template-columns:1fr}
+  .intro h1,.paper h1{font-size:24px}
+}
+@media (max-width:420px){
+  .tiles{grid-template-columns:1fr 1fr}
+  .tile .v{font-size:18px}
+  .goals{grid-template-columns:1fr 1fr}
+}
+
+/* cockpit */
+.dash{display:flex; flex-direction:column; gap:12px}
+.legend{display:flex; gap:14px; font-size:12.5px; color:var(--muted); align-items:center; flex-wrap:wrap}
+.legend i{display:inline-block; width:22px; height:0; border-top:2.5px solid var(--accent); vertical-align:middle; margin-right:5px}
+.legend i.dash2{border-top-style:dashed; border-top-color:var(--warn)}
+.bigs{display:grid; grid-template-columns:repeat(2,1fr); gap:10px}
+.smalls{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+.gc{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:10px 12px 6px}
+.gc.goalk{border-color:var(--accent)}
+.gc .h{display:flex; justify-content:space-between; align-items:baseline; gap:6px; font-size:13px; color:var(--muted)}
+.gc .vv{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap}
+.gc .vv b{font-size:22px; font-variant-numeric:tabular-nums; color:var(--ink)}
+.gc .pj{font-size:12.5px; font-weight:700; color:var(--warn); font-variant-numeric:tabular-nums}
+svg.mid{width:100%; height:120px; display:block}
+svg.sm{width:100%; height:70px; display:block}
+.cockpit{display:flex; flex-direction:column; gap:0; padding:0; overflow:hidden}
+.cockpit .sec{padding:14px 16px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:14px}
+.cockpit .sec-h{display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:14px}
+.cockpit .sec-h small{font-weight:500; color:var(--muted); font-size:12px}
+.sl{display:flex; flex-direction:column; gap:4px}
+.sl .top2{display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+.sl .nm{font-size:14px; font-weight:500}
+.sl .val{font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--accent)}
+.sl .chg{font-size:12px; font-weight:700}
+.sl input[type=range]{width:100%; accent-color:var(--accent); height:28px; cursor:grab; margin:0}
+.sl input[type=range]:active{cursor:grabbing}
+.ticks{display:flex; justify-content:space-between; font-size:11px; color:var(--muted)}
+.quick{display:flex; gap:4px; flex-wrap:wrap}
+.quick button{border:1px solid var(--line); background:var(--bg); border-radius:6px; padding:4px 8px; font-size:12px; cursor:pointer; font-variant-numeric:tabular-nums}
+.quick button:hover{border-color:var(--accent)}
+.tg{display:grid; grid-template-columns:1fr 1fr; gap:6px}
+.tgb{display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left; border:1.5px solid var(--line); background:var(--bg); border-radius:8px; padding:8px 10px; cursor:pointer}
+.tgb b{font-size:13px; line-height:1.3}
+.tgb span{font-size:11.5px; color:var(--muted); line-height:1.35}
+.tgb em{font-style:normal; font-size:11px; font-weight:700; color:var(--accent)}
+.tgb[aria-pressed="true"]{border-color:var(--accent); background:var(--accent-soft)}
+.tgb[aria-pressed="true"] b::before{content:'✓ '; color:var(--accent)}
+.tgb:disabled{opacity:.4; cursor:not-allowed}
+.cost{display:flex; flex-wrap:wrap; gap:6px}
+.switch{display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer}
+@media (max-width:960px){ .smalls{grid-template-columns:repeat(2,1fr)} }
+@media (max-width:520px){ .bigs{grid-template-columns:1fr} .tg{grid-template-columns:1fr} }
+@media (prefers-reduced-motion: reduce){*{transition:none!important; scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<header class="top"><div class="top-in">
+  <div class="brand"><b>경제정책 조정회의</b><span>고등학교 경제 · PBL 수행평가 시뮬레이터</span></div>
+  <div class="who" id="who"></div>
+</div></header>
+<main id="app"></main>
+<script>
+/* ===== ENGINE START ===== */
+const Z8 = [0,0,0,0,0,0,0,0];
+const QLABELS = ['2026년 4분기(현재)','2027년 1분기','2027년 2분기','2027년 3분기','2027년 4분기','2028년 1분기','2028년 2분기','2028년 3분기','2028년 4분기'];
+
+const SCENARIOS = {
+  stag: {
+    id:'stag', title:'유가 충격과 스태그플레이션', tag:'물가↑ 성장↓',
+    lead:'중동 분쟁으로 국제유가가 배럴당 130달러를 넘었습니다. 물가는 5%대로 뛰었는데 소비와 투자는 얼어붙었습니다.',
+    brief:[
+      '두바이유 가격이 6개월 만에 60% 올랐고, 휘발유·전기·가스 요금이 줄줄이 인상되었습니다.',
+      '소비자물가 상승률은 5.6%로 2008년 이후 가장 높습니다. 기대인플레이션도 4%를 넘어 임금 인상 요구가 커지고 있습니다.',
+      '반면 실질소득이 줄면서 소비가 위축되어 성장률은 0%대로 떨어졌습니다.',
+      '물가를 잡으려 금리를 올리면 경기가 더 나빠지고, 경기를 살리려 돈을 풀면 물가가 더 오르는 딜레마입니다.'
+    ],
+    gPot:2.0, rN:2.5, uN:3.5, piT:2.0, fxEq:1350, baseDef:2.5, caBase:1.5, hpBase:2.0, spread0:1.0,
+    usR:[4,4,4,4,3.75,3.75,3.5,3.5],
+    start:{g:0.9, pi:5.6, pie:4.2, u:3.8, r:3.0, fx:1390, debt:49, deficit:2.5, ca:0.4, hp:1.0, reserves:4100, approval:41, m2:5.0},
+    shocks:{ s:[1.4,1.2,1.0,0.8,1.1,0.6,0.4,0.2], d:[-0.6,-0.5,-0.4,-0.3,-0.45,-0.2,-0.1,0], fx:Z8, ca:[-0.8,-0.6,-0.4,-0.2,-0.5,-0.2,0,0], hp:Z8 },
+    news:['','','','','중동 긴장이 다시 고조되며 국제유가가 재차 상승했습니다. 공급 측 물가 압력이 커집니다.','','',''],
+    goals:[
+      {k:'pi', op:'<=', v:3.0, tol:1.5},
+      {k:'g', op:'>=', v:1.0, tol:1.5},
+      {k:'u', op:'<=', v:4.5, tol:1.0},
+      {k:'debt', op:'<=', v:55, tol:5}
+    ]
+  },
+  rec: {
+    id:'rec', title:'수출 급감과 경기 침체', tag:'성장↓ 실업↑ 디플레 우려',
+    lead:'세계 반도체 경기가 꺾이면서 수출이 석 달 연속 두 자릿수로 줄었습니다. 공장 가동률이 떨어지고 실업자가 늘고 있습니다.',
+    brief:[
+      '주력 수출품인 반도체 가격이 40% 넘게 떨어졌고, 중국의 경기 둔화로 수출 주문도 줄었습니다.',
+      '성장률은 -0.8%로 역성장했고, 실업률은 5.0%까지 올랐습니다. 청년층 체감 실업은 더 심각합니다.',
+      '물가상승률은 0.7%로 목표(2%)를 크게 밑돌아, 물가가 계속 떨어지는 디플레이션 우려가 나옵니다.',
+      '정부 재정에는 여유가 있지만, 빚을 늘려 경기를 떠받칠지에 대해서는 논쟁이 큽니다.'
+    ],
+    gPot:2.0, rN:2.5, uN:3.5, piT:2.0, fxEq:1350, baseDef:2.0, caBase:1.5, hpBase:2.0, spread0:0.25,
+    usR:[3.5,3.5,3.25,3.25,3.0,3.0,3.0,3.0],
+    start:{g:-0.8, pi:0.7, pie:1.4, u:5.0, r:3.25, fx:1330, debt:50, deficit:2.0, ca:1.2, hp:-3.0, reserves:4150, approval:38, m2:4.0},
+    shocks:{ s:[-0.25,-0.2,-0.15,-0.1,-0.1,0,0,0], d:[-1.6,-1.3,-1.0,-0.7,-1.2,-0.5,-0.3,-0.1], fx:Z8, ca:[-1.0,-0.8,-0.6,-0.4,-0.8,-0.3,-0.1,0], hp:[-1,-0.8,-0.5,-0.3,-0.3,0,0,0] },
+    news:['','','','','미국 대형 IT 기업들이 설비 투자를 줄이면서 반도체 수출이 다시 급감했습니다.','','',''],
+    goals:[
+      {k:'g', op:'>=', v:2.0, tol:2.0},
+      {k:'u', op:'<=', v:4.0, tol:1.0},
+      {k:'pi', op:'between', v:1.0, v2:3.0, tol:1.0},
+      {k:'debt', op:'<=', v:58, tol:4}
+    ]
+  },
+  boom: {
+    id:'boom', title:'경기 과열과 집값 거품', tag:'물가↑ 집값↑',
+    lead:'저금리가 길어지면서 대출이 크게 늘었습니다. 집값은 1년 새 11% 올랐고 물가도 4%를 넘었습니다.',
+    brief:[
+      '기준금리는 1.75%로 경제 상황에 비해 낮은 수준이 오래 유지되었습니다.',
+      '가계대출이 빠르게 늘면서 수도권 아파트값이 1년 동안 11% 올랐습니다. "지금 안 사면 못 산다"는 불안 심리가 퍼지고 있습니다.',
+      '성장률 3.9%, 실업률 2.7%로 경기는 좋아 보이지만, 물가가 4.3%로 오르고 가계부채 위험이 커지고 있습니다.',
+      '급하게 돈줄을 죄면 집값이 폭락하고 경기가 급랭할 수 있습니다. 부드러운 착륙(연착륙)이 과제입니다.'
+    ],
+    gPot:2.0, rN:2.5, uN:3.5, piT:2.0, fxEq:1350, baseDef:1.5, caBase:1.5, hpBase:3.0, spread0:1.25,
+    usR:[3,3,3.25,3.25,3.25,3.25,3.0,3.0],
+    start:{g:3.9, pi:4.3, pie:3.0, u:2.7, r:1.75, fx:1300, debt:47, deficit:1.5, ca:1.0, hp:11.0, reserves:4200, approval:52, m2:10.5},
+    shocks:{ s:[0.2,0.15,0.1,0.05,0,0,0,0], d:[0.7,0.6,0.45,0.3,0.4,0.2,0.1,0], fx:Z8, ca:Z8, hp:[2.0,1.5,1.0,0.5,1.8,0.5,0.2,0] },
+    news:['','','','','대규모 신도시 개발 소식이 퍼지며 주택 매수 심리가 다시 달아올랐습니다.','','',''],
+    goals:[
+      {k:'pi', op:'<=', v:3.0, tol:1.5},
+      {k:'hp', op:'<=', v:4.0, tol:5.0},
+      {k:'g', op:'>=', v:1.5, tol:1.5},
+      {k:'u', op:'<=', v:4.0, tol:1.0}
+    ]
+  },
+  fx: {
+    id:'fx', title:'자본 유출과 환율 급등', tag:'환율↑ 외환보유액↓',
+    lead:'미국이 금리를 5%대로 올리자 외국인 투자자금이 빠져나가고 있습니다. 원/달러 환율이 1,500원에 육박했습니다.',
+    brief:[
+      '미국 기준금리가 5.25%로 한국(3.00%)보다 2%p 넘게 높아지면서, 외국인이 한국 주식과 채권을 팔고 달러로 바꿔 나가고 있습니다.',
+      '환율이 1,495원까지 올라 수입 물가가 뛰고, 물가상승률이 3.6%가 되었습니다.',
+      '경상수지는 적자로 돌아섰고, 외환보유액은 3,950억 달러로 줄었습니다. 시장에서는 외환위기 재발 우려까지 나옵니다.',
+      '금리를 올려 자금 유출을 막으면 경기가 식고, 외환보유액을 풀어 환율을 막으면 보유액이 바닥날 수 있습니다.'
+    ],
+    gPot:2.0, rN:2.5, uN:3.5, piT:2.0, fxEq:1350, baseDef:2.0, caBase:1.0, hpBase:2.0, spread0:1.5,
+    usR:[5.25,5.5,5.5,5.75,5.75,5.5,5.25,5.0],
+    start:{g:1.5, pi:3.6, pie:3.0, u:3.9, r:3.0, fx:1495, debt:50, deficit:2.0, ca:-0.8, hp:0.5, reserves:3950, approval:40, m2:6.0},
+    shocks:{ s:[0.3,0.25,0.2,0.1,0.2,0.05,0,0], d:[-0.3,-0.3,-0.2,-0.1,-0.3,0,0,0], fx:[2.5,2.0,1.5,1.0,2.2,0.8,0.4,0.2], ca:[-0.6,-0.5,-0.3,-0.2,-0.4,0,0,0], hp:Z8 },
+    news:['','','','미국 중앙은행(연준)이 금리를 추가로 인상했습니다. 한·미 금리 차가 더 벌어집니다.','신흥국 금융 불안이 번지면서 외국인 자금 유출이 다시 빨라졌습니다.','','',''],
+    goals:[
+      {k:'fx', op:'<=', v:1420, tol:80},
+      {k:'pi', op:'<=', v:3.0, tol:1.5},
+      {k:'g', op:'>=', v:1.0, tol:1.5},
+      {k:'reserves', op:'>=', v:3800, tol:300}
+    ]
+  }
+};
+
+const TOGGLES = {
+  energy: {name:'유류세 인하·에너지 바우처', who:'정부', desc:'이번 분기 물가 −0.4%p, 지지율↑. 일시적 효과, 재정 약 12조 원.', cost:'재정 12조'},
+  jobs:   {name:'고용 지원·직업훈련', who:'정부', desc:'실업률 −0.2%p. 재정 약 10조 원.', cost:'재정 10조'},
+  supply: {name:'공급망·에너지 효율 투자', who:'정부', desc:'다음 분기부터 물가를 매 분기 0.12%p씩 계속 낮춤(최대 3회). 재정 약 15조 원.', cost:'재정 15조', max:3},
+  tariff: {name:'수입 관세 인하', who:'정부', desc:'물가 −0.25%p, 경상수지 악화.', cost:'경상수지↓'},
+  dsr:    {name:'가계대출 규제(DSR 강화)', who:'금융위원회', desc:'집값 상승률 −2.5%p, 소비 위축으로 성장률 −0.25%p.', cost:'성장↓'},
+  swap:   {name:'한·미 통화스와프 체결', who:'한국은행', desc:'외환시장 불안(위험 프리미엄)을 남은 기간 내내 줄임. 한 번만 가능.', cost:'1회 한정', max:1}
+};
+const CARDS = TOGGLES;
+
+const IND = {
+  g:{label:'경제성장률', unit:'%', d:1, full:'실질 GDP 성장률(연율)'},
+  pi:{label:'물가상승률', unit:'%', d:1, full:'소비자물가 상승률'},
+  u:{label:'실업률', unit:'%', d:1, full:'실업률'},
+  r:{label:'기준금리', unit:'%', d:2, full:'한국은행 기준금리'},
+  fx:{label:'원/달러 환율', unit:'원', d:0, full:'원/달러 환율'},
+  debt:{label:'국가채무비율', unit:'%', d:1, full:'GDP 대비 국가채무'},
+  hp:{label:'집값 상승률', unit:'%', d:1, full:'주택가격 상승률(전년비)'},
+  ca:{label:'경상수지', unit:'%', d:1, full:'GDP 대비 경상수지'},
+  reserves:{label:'외환보유액', unit:'억$', d:0, full:'외환보유액(억 달러)'},
+  m2:{label:'통화량 증가율', unit:'%', d:1, full:'통화량(M2) 증가율'},
+  approval:{label:'정책 지지율', unit:'%', d:0, full:'국민의 정책 지지율'}
+};
+
+function clamp(x,a,b){return Math.max(a,Math.min(b,x));}
+
+function initSim(sc){
+  const s = Object.assign({}, sc.start);
+  s.q = 0; s.rateEff = s.r - sc.rN; s.supplyRelief = 0; s.swap = false; s.uses = {};
+  s.hist = [snap(s)];
+  return s;
+}
+function snap(s){ const o={}; for(const k of Object.keys(IND)) o[k]=s[k]; o.pie=s.pie; return o; }
+
+function toggleAvailable(s, key){
+  const c = TOGGLES[key]; if(!c) return false;
+  if(c.max && (s.uses[key]||0) >= c.max) return false;
+  if(key==='swap' && s.swap) return false;
+  return true;
+}
+function fxintMax(s){ return Math.max(0, Math.min(300, Math.floor((s.reserves-3300)/30)*30)); }
+
+// pol = {rate(%), omo(조원, +매입/-매각), spend(조원, 기준 대비), tax(세율 %p), fxint(억$ 매도), on:{energy,jobs,supply,tariff,dsr,swap}}
+function stepSim(s, pol, sc){
+  const q = s.q, sh = sc.shocks, gPot = sc.gPot, on = pol.on || {};
+  const r = pol.rate, dr = r - s.r;
+  const sp = (pol.spend||0)/25, tx = pol.tax||0, om = (pol.omo||0)/30, fi = (pol.fxint||0)/180;
+  const n = Object.assign({}, s); n.uses = Object.assign({}, s.uses);
+  for(const k of Object.keys(on)) if(on[k]) n.uses[k] = (n.uses[k]||0)+1;
+  if(on.swap) n.swap = true;
+
+  n.rateEff = 0.55*s.rateEff + 0.45*(r - sc.rN) - 0.4*om;
+  const fxGap = (s.fx/sc.fxEq - 1)*100;
+  const fxRisk = sh.fx[q] + 0.35*Math.max(0, s.dep||0) - (n.swap ? 1.0 : 0) + (s.debt > 60 ? 0.05*(s.debt-60) : 0);
+  n.g = gPot + 0.5*(s.g - gPot) - 0.8*n.rateEff + 0.35*sp - 0.25*tx + sh.d[q] + 0.02*fxGap - 0.15*Math.max(0, fxRisk) + (on.dsr ? -0.25 : 0);
+  n.pie = 0.6*s.pie + 0.25*s.pi + 0.15*sc.piT - 0.2*dr + 0.1*om;
+  const dep = 0.9*((sc.usR[q] - r) - sc.spread0) + fxRisk - 0.15*fxGap - 0.5*dr - 3*fi + 1*om;
+  n.fx = s.fx*(1 + dep/100);
+  n.pi = 0.5*s.pi + 0.5*n.pie + 0.3*(n.g - gPot) + sh.s[q] + 0.1*dep - s.supplyRelief
+       + (on.energy ? -0.4 : 0) + (on.tariff ? -0.25 : 0);
+  n.supplyRelief = s.supplyRelief + (on.supply ? 0.12 : 0);
+  n.u = clamp(s.u - 0.18*(n.g - gPot) + 0.05*(sc.uN - s.u) + (on.jobs ? -0.2 : 0), 2.2, 15);
+  const cardDef = (on.energy?0.5:0) + (on.jobs?0.4:0) + (on.supply?0.6:0);
+  n.deficit = sc.baseDef + 0.5*sp - 0.5*tx - 0.3*(n.g - gPot) + 0.1*(r - sc.rN) + cardDef;
+  n.debt = s.debt + n.deficit/4 - s.debt*((n.g + n.pi)/100)/4;
+  n.ca = 0.6*s.ca + 0.4*(sc.caBase + 0.08*((n.fx/sc.fxEq-1)*100) - 0.4*(n.g - gPot) + sh.ca[q]) + (on.tariff ? -0.3 : 0);
+  n.hp = 0.55*s.hp + 0.45*(sc.hpBase - 2.5*n.rateEff + 0.8*(n.g - gPot)) + sh.hp[q] + (on.dsr ? -2.5 : 0);
+  n.reserves = s.reserves + n.ca*12 - (pol.fxint||0) - Math.max(0, dep)*35;
+  n.m2 = 0.6*s.m2 + 0.4*(6 - 1.5*(r - sc.rN) + 0.5*(n.g - gPot) + 0.3*(n.pi - 2)) + 3*om;
+  const target = 50 + 3*(n.g - gPot) - 4*Math.max(0, n.pi - 2.5) - 6*(n.u - sc.uN) - 4*Math.max(0, tx) + 1*Math.max(0, sp)
+               - 0.6*Math.max(0, n.hp - 6) - 0.5*Math.max(0, (n.fx - 1400)/20);
+  n.approval = clamp(0.6*s.approval + 0.4*target + (on.energy?3:0) + (on.jobs?1:0), 5, 95);
+  n.r = r; n.spend = pol.spend||0; n.tax = tx; n.dep = dep;
+  n.q = q + 1;
+  n.hist = s.hist.concat([snap(n)]);
+  return n;
+}
+
+function goalMet(goal, val){
+  if(goal.op==='<=') return val <= goal.v;
+  if(goal.op==='>=') return val >= goal.v;
+  return val >= goal.v && val <= goal.v2;
+}
+function goalScore(goal, val){
+  if(goalMet(goal,val)) return 1;
+  let miss;
+  if(goal.op==='<=') miss = val - goal.v;
+  else if(goal.op==='>=') miss = goal.v - val;
+  else miss = val < goal.v ? goal.v - val : val - goal.v2;
+  return clamp(1 - miss/goal.tol, 0, 1);
+}
+function goalText(goal){
+  const m = IND[goal.k], f = x => fmt(goal.k, x);
+  if(goal.op==='<=') return m.label+' '+f(goal.v)+' 이하';
+  if(goal.op==='>=') return m.label+' '+f(goal.v)+' 이상';
+  return m.label+' '+f(goal.v)+'~'+f(goal.v2);
+}
+function fmt(k, x){
+  const m = IND[k]; if(x==null || isNaN(x)) return '-';
+  const v = Number(x).toLocaleString('ko-KR',{minimumFractionDigits:m.d, maximumFractionDigits:m.d});
+  return v + m.unit;
+}
+function simScore(sc, s){
+  const parts = sc.goals.map(gl => goalScore(gl, s[gl.k]));
+  return Math.round(parts.reduce((a,b)=>a+b,0)/parts.length*100);
+}
+/* ===== ENGINE END ===== */
+if(typeof module!=='undefined') module.exports = {SCENARIOS, CARDS, TOGGLES, toggleAvailable, fxintMax, IND, initSim, stepSim, simScore, goalMet, fmt};
+
+/* ===== UI ===== */
+const KEY = 'econ-policy-sim-v2';
+const SPEND = {'-2':'대폭 축소','-1':'축소','0':'현 수준','1':'확대','2':'대폭 확대','3':'슈퍼 추경'};
+const TAX = {'-2':'대폭 감세','-1':'감세','0':'현행','1':'증세','2':'대폭 증세'};
+const MIN_WHY = 40, MIN_DIAG = 30, MIN_REF = 50;
+const $app = document.getElementById('app');
+
+let A = fresh();
+function fresh(){ return {screen:'start', sid:null, gid:'', name:'', team:'', diag:{a:'',b:''}, sim:null, log:[], draft:null, ref:{a:'',b:'',c:''}, err:'' }; }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(A)); }catch(e){} }
+function load(){ try{ const t = localStorage.getItem(KEY); return t ? JSON.parse(t) : null; }catch(e){ return null; } }
+const saved = load();
+let resumable = saved && saved.screen && saved.screen !== 'start' ? saved : null;
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function sc(){ return SCENARIOS[A.sid]; }
+function goalFor(k){ return sc() ? sc().goals.find(g=>g.k===k) : null; }
+function state(goal, v){ if(!goal) return ''; if(goalMet(goal,v)) return 'ok'; return goalScoreUI(goal,v) >= .5 ? 'warn' : 'bad'; }
+function goalScoreUI(goal, v){
+  let miss = goal.op==='<=' ? v-goal.v : goal.op==='>=' ? goal.v-v : (v<goal.v ? goal.v-v : v-goal.v2);
+  return Math.max(0, Math.min(1, 1 - miss/goal.tol));
+}
+const STATE_TXT = {ok:'달성', warn:'근접', bad:'미달'};
+
+function renderWho(){
+  const w = document.getElementById('who');
+  if(A.screen==='start' || !A.name){ w.innerHTML=''; return; }
+  w.innerHTML = '<strong>'+esc(A.gid)+' '+esc(A.name)+'</strong>'+(A.team?' · '+esc(A.team):'')+' · '+esc(sc().title);
+}
+
+function render(){
+  renderWho();
+  ({start:viewStart, brief:viewBrief, play:viewPlay, reflect:viewReflect, report:viewReport})[A.screen]();
+  save();
+}
+
+/* ---------- charts ---------- */
+function chart(vals, goal, w, h, cls, opt){
+  opt = opt || {};
+  const proj = opt.proj;
+  const pad = opt.axis ? {l:40,r:24,t:8,b:20} : {l:3,r:6,t:5,b:5};
+  const all = vals.concat(proj!=null?[proj]:[]);
+  let lo = Math.min(...all), hi = Math.max(...all);
+  const gv = goal ? (goal.op==='between' ? [goal.v, goal.v2] : [goal.v]) : [];
+  gv.forEach(x=>{ lo=Math.min(lo,x); hi=Math.max(hi,x); });
+  if(hi-lo < 1e-6){ hi+=1; lo-=1; }
+  const span = hi-lo; lo -= span*0.12; hi += span*0.12;
+  const n = 9, X = i => pad.l + (w-pad.l-pad.r)*i/(n-1), Y = v => pad.t + (h-pad.t-pad.b)*(1-(v-lo)/(hi-lo));
+  const big = Math.abs(hi-lo) > 50;
+  let s = '<svg class="'+cls+'" viewBox="0 0 '+w+' '+h+'" role="img" aria-label="'+esc(opt.label||'추이')+'">';
+  if(opt.axis){
+    for(let k=0;k<=3;k++){ const v = lo + (hi-lo)*k/3, y=Y(v);
+      s += '<line x1="'+pad.l+'" x2="'+(w-pad.r)+'" y1="'+y+'" y2="'+y+'" stroke="var(--line)" stroke-width="1"/>';
+      s += '<text x="'+(pad.l-5)+'" y="'+(y+3.5)+'" text-anchor="end" font-size="10" fill="var(--muted)">'+(big? Math.round(v).toLocaleString('ko-KR') : v.toFixed(1))+'</text>'; }
+    const XL=['현재','27·1Q','','27·3Q','','28·1Q','','28·3Q','28·4Q'];
+    XL.forEach((t,i)=>{ if(t) s += '<text x="'+X(i)+'" y="'+(h-5)+'" text-anchor="'+(i===8?'end':i===0?'start':'middle')+'" font-size="10" fill="var(--muted)">'+t+'</text>'; });
+  }
+  if(goal){
+    if(goal.op==='between'){ s += '<rect x="'+pad.l+'" width="'+(w-pad.l-pad.r)+'" y="'+Y(goal.v2)+'" height="'+(Y(goal.v)-Y(goal.v2))+'" fill="var(--ok)" opacity=".13"/>'; }
+    else { const y=Y(goal.v), y2 = goal.op==='<=' ? pad.t : h-pad.b;
+      s += '<rect x="'+pad.l+'" width="'+(w-pad.l-pad.r)+'" y="'+Math.min(y,y2)+'" height="'+Math.abs(y2-y)+'" fill="var(--ok)" opacity=".11"/>';
+      s += '<line x1="'+pad.l+'" x2="'+(w-pad.r)+'" y1="'+y+'" y2="'+y+'" stroke="var(--ok)" stroke-dasharray="4 3" stroke-width="1.2"/>'; }
+  }
+  if(opt.zero && lo<0 && hi>0) s += '<line x1="'+pad.l+'" x2="'+(w-pad.r)+'" y1="'+Y(0)+'" y2="'+Y(0)+'" stroke="var(--muted)" stroke-width="1" opacity=".5"/>';
+  const pts = vals.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1));
+  if(vals.length>1){
+    s += '<polygon points="'+X(0)+','+(h-pad.b)+' '+pts.join(' ')+' '+X(vals.length-1)+','+(h-pad.b)+'" fill="var(--accent)" opacity=".07"/>';
+    s += '<polyline points="'+pts.join(' ')+'" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linejoin="round"/>';
+  }
+  const li = vals.length-1;
+  if(proj!=null && li<8){
+    s += '<line x1="'+X(li)+'" y1="'+Y(vals[li])+'" x2="'+X(li+1)+'" y2="'+Y(proj)+'" stroke="var(--warn)" stroke-width="2.2" stroke-dasharray="5 4"/>';
+    s += '<circle cx="'+X(li+1)+'" cy="'+Y(proj)+'" r="4" fill="var(--surface)" stroke="var(--warn)" stroke-width="2"/>';
+  }
+  s += '<circle cx="'+X(li)+'" cy="'+Y(vals[li])+'" r="'+(opt.axis?4:3)+'" fill="var(--accent)"/>';
+  return s + '</svg>';
+}
+
+/* ---------- start ---------- */
+function viewStart(){
+  const cards = Object.values(SCENARIOS).map(s=>`
+    <button class="scen" type="button" data-sid="${s.id}" aria-pressed="${A.sid===s.id}">
+      <span class="pill">${esc(s.tag)}</span>
+      <h3>${esc(s.title)}</h3>
+      <p>${esc(s.lead)}</p>
+      <div class="goal-list">${s.goals.map(g=>'<span>'+esc(goalText(g))+'</span>').join('')}</div>
+    </button>`).join('');
+  $app.innerHTML = `
+  <div class="stack">
+    ${resumable ? `<div class="alert row" style="justify-content:space-between"><span><b>진행 중인 시뮬레이션</b> ${esc(resumable.name)} · ${esc(SCENARIOS[resumable.sid].title)} (${resumable.sim? resumable.sim.q : 0}/8분기)</span><span class="row"><button class="btn primary" data-act="resume">이어하기</button><button class="btn" data-act="discard">지우기</button></span></div>` : ''}
+    <section class="intro">
+      <div class="card">
+        <div class="eyebrow">문제 상황</div>
+        <h1>여러분이 대한민국 경제를 맡았습니다</h1>
+        <p>여러분은 정부와 한국은행이 함께하는 경제정책 조정회의의 위원입니다. 위기에 빠진 경제를 앞으로 2년(8분기) 동안 정책으로 되살려야 합니다.</p>
+        <p class="muted small">매 분기 기준금리·통화량·환율 개입·정부지출·세율을 슬라이더로 조절하고 특별 대책을 골라 그 근거를 기록합니다. 슬라이더를 움직이면 다음 분기 예상치가 그래프에 바로 그려집니다. 정책 효과는 시간이 걸려 나타나고, 한 목표를 좇으면 다른 목표가 흔들립니다.</p>
+        <div class="roles">
+          <div class="role"><b>통화정책 · 한국은행</b>기준금리, 공개시장조작(국채 매입·매각으로 통화량 조절), 외환시장 개입. 실제로는 금융통화위원회가 정부와 독립적으로 결정합니다.</div>
+          <div class="role"><b>재정정책 · 정부와 국회</b>정부지출(예산·추경), 세율, 고용·에너지 지원 같은 특별 대책. 국가채무가 늘어나는 대가를 치릅니다.</div>
+        </div>
+      </div>
+      <div class="card stack">
+        <div class="eyebrow">참여자 정보</div>
+        <label class="f" for="gid">학번<input type="text" id="gid" value="${esc(A.gid)}" placeholder="예: 10315" autocomplete="off"></label>
+        <label class="f" for="name">이름<input type="text" id="name" value="${esc(A.name)}" placeholder="이름" autocomplete="off"></label>
+        <label class="f" for="team">모둠 이름 <span class="hint">모둠 활동일 때만</span><input type="text" id="team" value="${esc(A.team)}" autocomplete="off"></label>
+      </div>
+    </section>
+    <section class="stack">
+      <h2 style="font-size:20px">해결할 경제 상황을 고르세요</h2>
+      <div class="scen-grid">${cards}</div>
+      <div class="err" id="err">${esc(A.err)}</div>
+      <div><button class="btn primary big" data-act="start">상황 브리핑 보기</button></div>
+    </section>
+    <details class="guide card">
+      <summary>교사용 안내: 수업 운영과 평가</summary>
+      <ol>
+        <li><b>1차시</b> 상황 브리핑을 읽고 문제를 진단한 뒤 1~4분기 정책을 결정합니다. 분기마다 근거를 ${MIN_WHY}자 이상 써야 다음으로 넘어갑니다.</li>
+        <li><b>2차시</b> 5~8분기를 진행합니다. 5분기 즈음 돌발 사건이 생겨 계획을 수정해야 합니다.</li>
+        <li><b>3차시</b> 성찰 질문에 답하고 보고서를 복사해 제출합니다(구글 클래스룸 등). 같은 상황을 고른 학생끼리 결과를 비교하며 토론합니다.</li>
+      </ol>
+      <ul>
+        <li>대시보드의 '예상 미리보기'는 다음 한 분기만 보여 줍니다. 금리 효과는 그 뒤에 더 커지므로, 미리보기만 믿으면 안 된다는 점이 정책 시차를 가르치는 포인트입니다. 평가 상황에서는 학생이 직접 끌 수도 있습니다.</li>
+        <li>시뮬레이션 점수는 목표 지표의 최종 달성도만 자동 계산합니다. 보고서의 채점 기준표로 진단·근거·상충관계 이해·성찰을 교사가 평가해 함께 반영하세요.</li>
+        <li>모형은 교육용으로 단순화한 것입니다. 금리 효과는 2~3분기에 걸쳐 나타나고, 재정 효과는 즉시 나타나지만 국가채무가 늘어나도록 설계했습니다. 실제 경제와 수치가 다를 수 있다는 점을 학생에게 알려 주세요.</li>
+        <li>진행 기록은 이 브라우저에만 저장됩니다. 기기를 바꾸면 이어서 할 수 없으니 한 기기에서 끝까지 진행하게 해 주세요.</li>
+      </ul>
+    </details>
+  </div>`;
+}
+
+/* ---------- brief ---------- */
+function viewBrief(){
+  const s = sc(), st = A.sim;
+  const rows = Object.keys(IND).map(k=>{
+    const g = goalFor(k);
+    return `<tr><th>${esc(IND[k].full)}</th><td class="v">${fmt(k, st[k])}</td><td>${g?'<span class="pill">목표: '+esc(goalText(g).replace(IND[k].label+' ',''))+'</span>':''}</td></tr>`;
+  }).join('');
+  $app.innerHTML = `
+  <article class="paper stack">
+    <div class="card">
+      <div class="mast"><span>경제정책 조정회의 브리핑 자료</span><span>2026년 12월 · 대외비</span></div>
+      <h1>${esc(s.title)}</h1>
+      <p class="lead">${esc(s.lead)}</p>
+      <div class="body">${s.brief.map(p=>'<p>'+esc(p)+'</p>').join('')}</div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:18px; margin-bottom:8px">현재 경제 지표와 2028년 말 목표</h2>
+      <div class="tbl-wrap"><table class="ind-table">${rows}</table></div>
+      <p class="hint" style="margin:8px 0 0">목표는 8분기가 끝난 2028년 4분기 값으로 판정합니다.</p>
+    </div>
+    <div class="card stack">
+      <h2 style="font-size:18px">1단계: 문제 진단</h2>
+      <label class="f" for="d1">지금 이 경제의 가장 큰 문제는 무엇이고, 그 원인은 무엇인가요?
+        <span class="hint">총수요·총공급 개념을 사용해 쓰세요. (${MIN_DIAG}자 이상)</span>
+        <textarea id="d1">${esc(A.diag.a)}</textarea></label>
+      <label class="f" for="d2">목표들 가운데 서로 충돌하는 것은 무엇인가요? 어떤 순서로 해결할 계획인가요?
+        <span class="hint">${MIN_DIAG}자 이상</span>
+        <textarea id="d2">${esc(A.diag.b)}</textarea></label>
+      <div class="err" id="err">${esc(A.err)}</div>
+      <div class="row"><button class="btn" data-act="home">상황 다시 고르기</button><button class="btn primary big" data-act="begin">회의 시작: 2027년 1분기 결정</button></div>
+    </div>
+  </article>`;
+}
+
+/* ---------- play ---------- */
+const TKEYS = Object.keys(TOGGLES);
+function defaultDraft(){ const st=A.sim; return {rate:st.r, omo:0, spend:st.spend||0, tax:st.tax||0, fxint:0, on:{}, why:''}; }
+function draftPol(d){ return {rate:d.rate, omo:d.omo, spend:d.spend, tax:d.tax, fxint:d.fxint, on:Object.assign({}, d.on)}; }
+function sgn(x, dgt){ return (x>0?'+':x<0?'−':'')+Math.abs(x).toFixed(dgt); }
+function polSummary(l){
+  const a=[];
+  if(l.omo) a.push((l.omo>0?'국채 매입 ':'국채 매각 ')+Math.abs(l.omo)+'조');
+  if(l.fxint) a.push('달러 매도 '+l.fxint+'억$');
+  TKEYS.forEach(k=>{ if(l.on && l.on[k]) a.push(TOGGLES[k].name); });
+  return a.length ? a.join(', ') : '-';
+}
+const SLIDERS = {
+  rate:{nm:'기준금리', unit:'%', step:0.25, dgt:2, ticks:true},
+  omo:{nm:'공개시장조작(국채 매입·매각)', unit:'조 원', min:-40, max:40, step:10, dgt:0, left:'매각(통화량↓)', right:'매입(통화량↑)'},
+  fxint:{nm:'외환시장 개입(달러 매도)', unit:'억 달러', min:0, step:30, dgt:0, left:'개입 안 함', right:'대규모 개입'},
+  spend:{nm:'정부지출(본예산 대비)', unit:'조 원', min:-50, max:75, step:5, dgt:0, left:'긴축', right:'확장(추경)'},
+  tax:{nm:'세율(소득세·법인세)', unit:'%p', min:-2, max:2, step:0.5, dgt:1, left:'감세', right:'증세'}
+};
+function sliderBounds(k){
+  const st=A.sim, c=SLIDERS[k];
+  if(k==='rate') return {min:Math.max(0, st.r-1), max:Math.min(7, st.r+1)};
+  if(k==='fxint') return {min:0, max:fxintMax(st)};
+  return {min:c.min, max:c.max};
+}
+function sliderHTML(k){
+  const c=SLIDERS[k], d=A.draft, b=sliderBounds(k);
+  const quick = k==='rate' ? `<div class="quick">${[-1,-0.5,-0.25,0,0.25,0.5,1].map(x=>`<button type="button" data-q="rate" data-v="${(A.sim.r+x).toFixed(2)}" ${A.sim.r+x<0||A.sim.r+x>7?'disabled':''}>${x===0?'동결':sgn(x,2)}</button>`).join('')}</div>` : '';
+  const ticks = k==='rate' ? `<div class="ticks"><span>${b.min.toFixed(2)}%</span><span>현재 ${A.sim.r.toFixed(2)}%</span><span>${b.max.toFixed(2)}%</span></div>`
+    : `<div class="ticks"><span>${c.left}</span><span>${c.right}</span></div>`;
+  return `<div class="sl"><div class="top2"><label class="nm" for="s-${k}">${c.nm}</label><span><span class="val" id="v-${k}"></span></span></div>
+    <input type="range" id="s-${k}" data-sl="${k}" min="${b.min}" max="${b.max}" step="${c.step}" value="${d[k]}" ${b.max<=b.min?'disabled':''}>
+    ${ticks}<div class="chg" id="c-${k}"></div>${quick}</div>`;
+}
+function sliderText(k){
+  const c=SLIDERS[k], d=A.draft, st=A.sim, x=d[k];
+  if(k==='rate'){ const dr=x-st.r; return [x.toFixed(2)+'%', Math.abs(dr)<1e-9?'<span class="flat">동결</span>':`<span class="${dr>0?'up':'down'}">${sgn(dr,2)}%p ${Math.abs(dr)>=0.75?'자이언트 스텝':Math.abs(dr)>=0.5?'빅 스텝':dr>0?'인상':'인하'}</span>`]; }
+  if(k==='omo') return [(x>0?'+':'')+x+'조', x===0?'<span class="flat">하지 않음</span>':x>0?'<span class="down">돈을 풀어 시중금리↓, 통화량↑</span>':'<span class="up">돈을 거둬 시중금리↑, 통화량↓</span>'];
+  if(k==='fxint') return [x+'억$', x===0?'<span class="flat">하지 않음</span>':'<span class="down">환율 하락 압력, 외환보유액 −'+x+'억$</span>'];
+  if(k==='spend') return [(x>0?'+':'')+x+'조', x===0?'<span class="flat">본예산 수준</span>':`<span class="${x>0?'down':'up'}">GDP의 ${sgn(x/25*0.5,1)}% · 지출은 바꾸기 전까지 유지</span>`];
+  if(k==='tax') return [(x>0?'+':'')+x.toFixed(1)+'%p', x===0?'<span class="flat">현행 세율</span>':`<span class="${x>0?'up':'down'}">세수 GDP의 ${sgn(x*0.5,1)}% · 세율은 바꾸기 전까지 유지</span>`];
+}
+function chartCard(k, proj, big){
+  const g = goalFor(k), st=A.sim, v=st[k], vals=st.hist.map(h=>h[k]);
+  const pj = proj!=null ? `<span class="pj">→ ${fmt(k,proj)}</span>` : '';
+  const prev = st.hist.length>1 ? st.hist[st.hist.length-2][k] : null;
+  let dl=''; if(prev!=null){ const m=IND[k]; let dv=v-prev; if(Math.abs(dv) < 0.5*Math.pow(10,-m.d)) dv=0; dl = `<span class="small muted num">${dv>=0?'+':''}${dv.toLocaleString('ko-KR',{minimumFractionDigits:m.d,maximumFractionDigits:m.d})}</span>`; }
+  return `<div class="gc ${g?'goalk':''}" id="gc-${k}"><div class="h"><span>${esc(big?IND[k].full:IND[k].label)}</span>${g?'<span class="pill '+state(g,v)+'">'+esc(goalText(g).replace(IND[k].label+' ',''))+'</span>':''}</div>
+    <div class="vv"><b>${fmt(k,v)}</b>${dl}${pj}</div>${chart(vals, g, big?420:220, big?120:70, big?'mid':'sm', {axis:big, proj:proj, zero:true, label:IND[k].full+' 추이'})}</div>`;
+}
+function costHTML(){
+  const d=A.draft, st=A.sim; const items=[];
+  const fis = d.spend + (d.on.energy?12:0) + (d.on.jobs?10:0) + (d.on.supply?15:0) - d.tax*12.5;
+  items.push(`<span class="pill ${fis>20?'bad':fis>0?'warn':'ok'}">재정 순부담 ${fis>0?'+':''}${Math.round(fis)}조 원</span>`);
+  if(d.fxint) items.push(`<span class="pill warn">외환보유액 −${d.fxint}억$</span>`);
+  if(d.omo) items.push(`<span class="pill">${d.omo>0?'통화량 확대':'통화량 축소'}</span>`);
+  return items.join('');
+}
+function updatePreview(){
+  const st=A.sim, d=A.draft;
+  Object.keys(SLIDERS).forEach(k=>{ const [v,c]=sliderText(k); const a=document.getElementById('v-'+k), b=document.getElementById('c-'+k); if(a) a.textContent=v; if(b) b.innerHTML=c; });
+  const nx = A.preview!==false ? stepSim(st, draftPol(d), sc()) : null;
+  Object.keys(IND).forEach(k=>{ const el=document.getElementById('gc-'+k); if(el) el.outerHTML = chartCard(k, nx?nx[k]:null, el.dataset.big==='1' || el.closest('.bigs')!=null); });
+  const c=document.getElementById('cost'); if(c) c.innerHTML=costHTML();
+}
+function viewPlay(){
+  const s = sc(), st = A.sim, q = st.q, d = A.draft || (A.draft = defaultDraft());
+  if(!d.on) d.on={};
+  const goals = s.goals.map(g=>{ const v=st[g.k], cl=state(g,v);
+    return `<div class="goal ${cl}"><div class="t">${esc(goalText(g))}</div><div class="row" style="justify-content:space-between"><span class="v">${fmt(g.k,v)}</span><span class="pill ${cl}">${STATE_TXT[cl]}</span></div></div>`; }).join('');
+  const bigK = s.goals.map(g=>g.k), smallK = Object.keys(IND).filter(k=>!bigK.includes(k));
+
+  let feed = '';
+  if(q>0){
+    const items = [];
+    const pend = (st.r - s.rN) - st.rateEff;
+    if(Math.abs(pend) >= 0.15) items.push(pend>0 ? '금리 인상 효과가 아직 다 나타나지 않았습니다. 앞으로 경기와 물가를 더 누를 압력이 남아 있습니다.' : '금리 인하 효과가 아직 다 나타나지 않았습니다. 앞으로 경기를 더 띄울 힘이 남아 있습니다.');
+    if(st.dep > 1) items.push(`원화 가치가 ${st.dep.toFixed(1)}% 떨어졌습니다(환율 상승). 수입 물가가 오르고 외환보유액이 빠져나갑니다.`);
+    if(st.dep < -1) items.push(`원화 가치가 ${(-st.dep).toFixed(1)}% 올랐습니다(환율 하락). 수입 물가 부담이 줄어듭니다.`);
+    if(st.deficit > 4) items.push(`재정적자가 GDP의 ${st.deficit.toFixed(1)}%입니다. 국가채무가 빠르게 늘고 있습니다.`);
+    if(st.pie > 3.5) items.push(`사람들이 예상하는 물가상승률(기대인플레이션)이 ${st.pie.toFixed(1)}%로 높습니다. 물가가 쉽게 내려가지 않습니다.`);
+    if(st.hp > 8) items.push(`집값이 1년 새 ${st.hp.toFixed(1)}% 오를 만큼 과열되었습니다.`);
+    if(st.u > 5.5) items.push(`실업률이 ${st.u.toFixed(1)}%까지 올라 고용 불안이 커지고 있습니다.`);
+    if(st.approval < 30) items.push(`정책 지지율이 ${Math.round(st.approval)}%로 낮습니다. 국민의 불만이 큽니다.`);
+    if(!items.length) items.push('큰 경고 신호는 없습니다. 목표 지표의 방향을 확인하세요.');
+    feed = `<div class="card feed"><h3>${QLABELS[q]} 결과 보고</h3><ul>${items.map(i=>'<li>'+esc(i)+'</li>').join('')}</ul></div>`;
+  }
+  const news = s.news[q] ? `<div class="alert"><b>속보</b> ${esc(s.news[q])}</div>` : '';
+  const tgs = TKEYS.map(k=>{ const c=TOGGLES[k], ok=toggleAvailable(st,k), used=st.uses[k]||0;
+    return `<button type="button" class="tgb" data-tg="${k}" aria-pressed="${!!d.on[k]}" ${ok?'':'disabled'}><b>${esc(c.name)}</b><span>${esc(c.desc)}</span><em>${esc(c.who)} · ${esc(c.cost)}${c.max?' · '+used+'/'+c.max+'회':''}</em></button>`; }).join('');
+  const logRows = A.log.map((l,i)=>`<tr><td class="n">${QLABELS[i+1].replace('년 ','.').replace('분기','Q')}</td><td class="n">${l.rate.toFixed(2)}%</td><td class="n">${l.spend>0?'+':''}${l.spend}조</td><td class="n">${l.tax>0?'+':''}${l.tax}%p</td><td>${esc(polSummary(l))}</td><td class="why">${esc(l.why)}</td></tr>`).join('');
+
+  $app.innerHTML = `
+  <div class="status">
+    <div><div class="eyebrow">${esc(s.title)}</div><h2>${QLABELS[q+1]} 정책 결정</h2></div>
+    <div class="row"><div class="dots" aria-label="진행 ${q}/8">${[0,1,2,3,4,5,6,7].map(i=>`<i class="${i<q?'done':i===q?'now':''}"></i>`).join('')}</div><span class="small muted">남은 분기 ${8-q}</span></div>
+  </div>
+  <div class="goals">${goals}</div>
+  <div class="play">
+    <div class="stack">
+      ${news}${feed}
+      <div class="dash">
+        <div class="row" style="justify-content:space-between">
+          <h3 style="font-size:16px">경제 지표 대시보드</h3>
+          <div class="legend"><span><i></i>실적</span><span><i class="dash2"></i>지금 결정대로면 다음 분기 예상</span>
+          <label class="switch" for="pv"><input type="checkbox" id="pv" ${A.preview!==false?'checked':''}> 예상 미리보기</label></div>
+        </div>
+        <div class="bigs">${bigK.map(k=>chartCard(k,null,true)).join('')}</div>
+        <div class="smalls">${smallK.map(k=>chartCard(k,null,false)).join('')}</div>
+      </div>
+      ${A.log.length? `<div class="card"><h3 style="font-size:15px;margin-bottom:6px">정책 결정 기록</h3><div class="tbl-wrap"><table class="log"><thead><tr><th>분기</th><th>금리</th><th>지출</th><th>세율</th><th>기타 정책</th><th>근거</th></tr></thead><tbody>${logRows}</tbody></table></div></div>`:''}
+    </div>
+    <form class="card cockpit" id="pol" novalidate>
+      <div class="sec"><div class="sec-h">통화정책 <small>한국은행</small></div>${sliderHTML('rate')}${sliderHTML('omo')}${sliderHTML('fxint')}</div>
+      <div class="sec"><div class="sec-h">재정정책 <small>정부·국회</small></div>${sliderHTML('spend')}${sliderHTML('tax')}</div>
+      <div class="sec"><div class="sec-h">특별 대책 <small>여러 개 선택 가능</small></div><div class="tg">${tgs}</div></div>
+      <div class="sec">
+        <div class="sec-h">이번 분기 정책 비용</div><div class="cost" id="cost"></div>
+        <label class="f" for="why">정책 근거
+          <span class="hint">어떤 지표를, 어떤 경로로 움직이려는지, 어떤 부작용을 감수하는지 쓰세요. (${MIN_WHY}자 이상)</span>
+          <textarea id="why">${esc(d.why)}</textarea>
+          <span class="hint" id="cnt">${d.why.trim().length}자</span>
+        </label>
+        <div class="err" id="err">${esc(A.err)}</div>
+        <button class="btn primary big" type="submit">${QLABELS[q+1]} 정책 실행</button>
+      </div>
+    </form>
+  </div>`;
+  updatePreview();
+}
+
+/* ---------- reflect ---------- */
+function goalSummaryTable(){
+  const s=sc(), st=A.sim;
+  return `<div class="tbl-wrap"><table class="ind-table"><thead><tr><th>목표</th><th>시작</th><th>최종</th><th>판정</th></tr></thead><tbody>${
+    s.goals.map(g=>{ const cl=state(g,st[g.k]); return `<tr><th>${esc(goalText(g))}</th><td class="v">${fmt(g.k,st.hist[0][g.k])}</td><td class="v">${fmt(g.k,st[g.k])}</td><td><span class="pill ${cl}">${STATE_TXT[cl]}</span></td></tr>`; }).join('')
+  }</tbody></table></div>`;
+}
+function viewReflect(){
+  const s=sc(), st=A.sim;
+  $app.innerHTML = `
+  <div class="paper stack">
+    <div class="card stack">
+      <div class="eyebrow">2028년 4분기 · 임기 종료</div>
+      <h1 style="font-size:26px">8분기 정책 결과</h1>
+      <div class="row"><span class="score num">${simScore(s,st)}<small> / 100 시뮬레이션 점수</small></span></div>
+      ${goalSummaryTable()}
+    </div>
+    <div class="card stack">
+      <h2 style="font-size:18px">3단계: 성찰</h2>
+      <label class="f" for="r1">가장 효과적이었던 정책은 무엇이고, 왜 효과가 있었나요?
+        <span class="hint">경제 개념(총수요, 금리 전달 경로, 승수효과 등)을 사용해 쓰세요. (${MIN_REF}자 이상)</span><textarea id="r1">${esc(A.ref.a)}</textarea></label>
+      <label class="f" for="r2">예상과 다르게 나타난 결과는 무엇이고, 그 원인은 무엇이라고 생각하나요?
+        <span class="hint">정책 시차, 돌발 사건, 부작용 등을 떠올려 보세요. (${MIN_REF}자 이상)</span><textarea id="r2">${esc(A.ref.b)}</textarea></label>
+      <label class="f" for="r3">다시 한다면 무엇을 바꾸겠나요? 서로 충돌하는 목표를 어떻게 조정하겠나요?
+        <span class="hint">${MIN_REF}자 이상</span><textarea id="r3">${esc(A.ref.c)}</textarea></label>
+      <div class="err" id="err">${esc(A.err)}</div>
+      <div><button class="btn primary big" data-act="report">보고서 만들기</button></div>
+    </div>
+  </div>`;
+}
+
+/* ---------- report ---------- */
+const RUBRIC = [
+  ['상황 진단','지표를 근거로 문제와 원인을 총수요·총공급 개념으로 정확히 설명함','문제는 찾았으나 원인 설명이 부분적임','지표 나열에 그치거나 원인이 틀림'],
+  ['정책 근거의 타당성','정책이 지표에 영향을 주는 경로(금리·환율·승수효과 등)를 매 분기 논리적으로 제시함','근거는 있으나 경로 설명이 일부 빠짐','근거가 막연하거나 정책과 맞지 않음'],
+  ['상충관계 인식과 조정','물가·성장·고용·재정 사이의 상충을 인식하고 결과를 보며 정책을 수정함','상충을 인식했으나 조정이 부족함','한 목표만 고려함'],
+  ['결과 성찰','시차·돌발 사건 등 예상과 다른 결과의 원인을 분석하고 개선안을 제시함','성찰은 했으나 분석이 얕음','결과 서술에 그침'],
+  ['시뮬레이션 성과','자동 점수 80점 이상','자동 점수 50~79점','자동 점수 50점 미만']
+];
+function reportText(){
+  const s=sc(), st=A.sim, L=[];
+  L.push('[경제정책 시뮬레이터 보고서]');
+  L.push('학번/이름: '+A.gid+' '+A.name+(A.team?' (모둠: '+A.team+')':''));
+  L.push('상황: '+s.title);
+  L.push('시뮬레이션 점수: '+simScore(s,st)+'/100');
+  L.push('');
+  L.push('■ 목표 달성');
+  s.goals.forEach(g=>L.push('- '+goalText(g)+': '+fmt(g.k,st.hist[0][g.k])+' → '+fmt(g.k,st[g.k])+' ['+STATE_TXT[state(g,st[g.k])]+']'));
+  L.push('');
+  L.push('■ 문제 진단');
+  L.push('1) '+A.diag.a); L.push('2) '+A.diag.b);
+  L.push('');
+  L.push('■ 분기별 정책 결정');
+  A.log.forEach((l,i)=>{ const h=st.hist[i+1];
+    L.push(QLABELS[i+1]+' | 금리 '+l.rate.toFixed(2)+'% | 지출 '+(l.spend>0?'+':'')+l.spend+'조 | 세율 '+(l.tax>0?'+':'')+l.tax+'%p | 기타 '+polSummary(l));
+    L.push('   근거: '+l.why);
+    L.push('   결과: 성장률 '+fmt('g',h.g)+', 물가 '+fmt('pi',h.pi)+', 실업률 '+fmt('u',h.u)+', 환율 '+fmt('fx',h.fx)+', 국가채무 '+fmt('debt',h.debt));
+  });
+  L.push('');
+  L.push('■ 성찰');
+  L.push('1) 가장 효과적이었던 정책: '+A.ref.a);
+  L.push('2) 예상과 다른 결과: '+A.ref.b);
+  L.push('3) 다시 한다면: '+A.ref.c);
+  return L.join('\n');
+}
+function viewReport(){
+  const s=sc(), st=A.sim;
+  const charts = s.goals.map(g=>`<div class="chart"><h3>${esc(IND[g.k].full)} <span class="pill ${state(g,st[g.k])}">${esc(goalText(g).replace(IND[g.k].label+' ',''))}</span></h3>${chart(st.hist.map(h=>h[g.k]), g, 400, 150, 'big', {axis:true, zero:true, label:IND[g.k].full+' 추이'})}</div>`).join('');
+  const rows = A.log.map((l,i)=>{ const h=st.hist[i+1]; return `<tr><td class="n">${QLABELS[i+1]}</td><td class="n">${l.rate.toFixed(2)}%</td><td class="n">${l.spend>0?'+':''}${l.spend}조<br>${l.tax>0?'+':''}${l.tax}%p</td><td>${esc(polSummary(l))}</td><td class="why">${esc(l.why)}</td><td class="n">성장 ${fmt('g',h.g)}<br>물가 ${fmt('pi',h.pi)}<br>실업 ${fmt('u',h.u)}</td></tr>`; }).join('');
+  $app.innerHTML = `
+  <article class="report stack">
+    <div class="card stack">
+      <div class="rep-head">
+        <div><div class="eyebrow">경제정책 시뮬레이터 보고서</div><h1>${esc(s.title)}</h1><div class="muted">${esc(A.gid)} ${esc(A.name)}${A.team?' · 모둠 '+esc(A.team):''}</div></div>
+        <div class="score">${simScore(s,st)}<small> / 100</small></div>
+      </div>
+      ${goalSummaryTable()}
+      <div class="charts">${charts}</div>
+    </div>
+    <div class="card stack">
+      <h2 style="font-size:18px">문제 진단</h2>
+      <div class="qa"><h3>가장 큰 문제와 원인</h3><p>${esc(A.diag.a)}</p></div>
+      <div class="qa"><h3>충돌하는 목표와 해결 순서</h3><p>${esc(A.diag.b)}</p></div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:18px; margin-bottom:8px">분기별 정책 결정과 결과</h2>
+      <div class="tbl-wrap"><table class="log"><thead><tr><th>분기</th><th>금리</th><th>지출·세율</th><th>기타 정책</th><th>근거</th><th>결과</th></tr></thead><tbody>${rows}</tbody></table></div>
+    </div>
+    <div class="card stack">
+      <h2 style="font-size:18px">성찰</h2>
+      <div class="qa"><h3>가장 효과적이었던 정책</h3><p>${esc(A.ref.a)}</p></div>
+      <div class="qa"><h3>예상과 다른 결과와 원인</h3><p>${esc(A.ref.b)}</p></div>
+      <div class="qa"><h3>다시 한다면</h3><p>${esc(A.ref.c)}</p></div>
+    </div>
+    <div class="card">
+      <h2 style="font-size:18px; margin-bottom:8px">채점 기준표 (교사용)</h2>
+      <div class="tbl-wrap"><table class="log rubric"><thead><tr><th>평가 요소</th><th>상</th><th>중</th><th>하</th></tr></thead><tbody>${RUBRIC.map(r=>`<tr><th>${r[0]}</th><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('')}</tbody></table></div>
+    </div>
+    <div class="card stack">
+      <h2 style="font-size:18px">제출하기</h2>
+      <p class="small muted" style="margin:0">아래 버튼으로 보고서 전체를 복사해 구글 클래스룸 등에 붙여 넣으세요.</p>
+      <div class="row"><button class="btn primary" data-act="copy">보고서 텍스트 복사</button><span class="small" id="copied" role="status"></span></div>
+      <textarea class="copybox" id="copybox" readonly hidden>${esc(reportText())}</textarea>
+      <div class="row"><button class="btn" data-act="newgame">새 시뮬레이션 시작</button></div>
+    </div>
+  </article>`;
+}
+
+/* ---------- events ---------- */
+function v(id){ const e=document.getElementById(id); return e ? e.value : ''; }
+function syncStart(){ if(A.screen==='start'){ A.gid=v('gid').trim(); A.name=v('name').trim(); A.team=v('team').trim(); } }
+function syncDraft(){ if(A.screen==='play' && A.draft){ A.draft.why = v('why'); } }
+function syncText(){
+  if(A.screen==='brief'){ A.diag.a=v('d1'); A.diag.b=v('d2'); }
+  if(A.screen==='reflect'){ A.ref.a=v('r1'); A.ref.b=v('r2'); A.ref.c=v('r3'); }
+}
+function go(screen){ A.err=''; A.screen=screen; render(); window.scrollTo(0,0); }
+function fail(msg){ A.err=msg; const e=document.getElementById('err'); if(e){ e.textContent=msg; e.scrollIntoView({block:'center', behavior:'smooth'}); } save(); }
+
+document.addEventListener('click', e=>{
+  const t = e.target.closest('[data-sid],[data-act],[data-q],[data-tg]');
+  if(!t || t.disabled) return;
+  if(t.dataset.sid){ syncStart(); A.sid=t.dataset.sid; A.err=''; render(); return; }
+  if(t.dataset.q){ const k=t.dataset.q, v=Number(t.dataset.v), b=sliderBounds(k); A.draft[k]=Math.max(b.min,Math.min(b.max,v)); const el=document.getElementById('s-'+k); if(el) el.value=A.draft[k]; updatePreview(); save(); return; }
+  if(t.dataset.tg){ const k=t.dataset.tg; A.draft.on[k]=!A.draft.on[k]; t.setAttribute('aria-pressed', !!A.draft.on[k]); updatePreview(); save(); return; }
+  const act = t.dataset.act;
+  if(act==='resume'){ A = resumable; resumable=null; A.err=''; if(A.draft && !A.draft.on) A.draft=null; render(); return; }
+  if(act==='discard'){ resumable=null; try{localStorage.removeItem(KEY);}catch(_){} render(); return; }
+  if(act==='start'){ syncStart();
+    if(!A.gid || !A.name) return fail('학번과 이름을 입력하세요.');
+    if(!A.sid) return fail('해결할 경제 상황을 하나 고르세요.');
+    resumable=null; A.sim = initSim(sc()); A.log=[]; A.draft=null; A.diag={a:'',b:''}; A.ref={a:'',b:'',c:''};
+    return go('brief'); }
+  if(act==='home'){ syncText(); return go('start'); }
+  if(act==='begin'){ syncText();
+    if(A.diag.a.trim().length<MIN_DIAG || A.diag.b.trim().length<MIN_DIAG) return fail('두 진단 질문에 각각 '+MIN_DIAG+'자 이상 답하세요.');
+    A.draft=null; return go('play'); }
+  if(act==='report'){ syncText();
+    if([A.ref.a,A.ref.b,A.ref.c].some(x=>x.trim().length<MIN_REF)) return fail('세 성찰 질문에 각각 '+MIN_REF+'자 이상 답하세요.');
+    return go('report'); }
+  if(act==='copy'){ const txt = reportText(), msg=document.getElementById('copied');
+    const fallback = ()=>{ const b=document.getElementById('copybox'); b.hidden=false; b.focus(); b.select(); msg.textContent='자동 복사가 막혀 있습니다. 아래 상자의 내용을 직접 복사하세요(Ctrl+C).'; };
+    try{ navigator.clipboard.writeText(txt).then(()=>{ msg.textContent='복사했습니다. 제출할 곳에 붙여 넣으세요.'; }, fallback); }catch(_){ fallback(); }
+    return; }
+  if(act==='newgame'){ const keep={gid:A.gid,name:A.name,team:A.team}; A=Object.assign(fresh(), keep); resumable=null; return go('start'); }
+});
+document.addEventListener('input', e=>{
+  const k = e.target.dataset && e.target.dataset.sl;
+  if(k){ A.draft[k]=Number(e.target.value); updatePreview(); save(); return; }
+  if(e.target.id==='why'){ A.draft.why=e.target.value; const c=document.getElementById('cnt'); if(c) c.textContent=e.target.value.trim().length+'자'; save(); }
+  else if(['gid','name','team'].includes(e.target.id)) { syncStart(); save(); }
+  else if(['d1','d2','r1','r2','r3'].includes(e.target.id)) { syncText(); save(); }
+});
+document.addEventListener('change', e=>{ if(e.target.id==='pv'){ A.preview=e.target.checked; updatePreview(); save(); } });
+document.addEventListener('submit', e=>{
+  if(e.target.id!=='pol') return;
+  e.preventDefault(); syncDraft();
+  const d=A.draft;
+  if(d.why.trim().length < MIN_WHY) return fail('정책 근거를 '+MIN_WHY+'자 이상 쓰세요. 지금 '+d.why.trim().length+'자입니다.');
+  TKEYS.forEach(k=>{ if(d.on[k] && !toggleAvailable(A.sim,k)) d.on[k]=false; });
+  const pol = draftPol(d);
+  A.log.push(Object.assign({why:d.why.trim()}, pol));
+  A.sim = stepSim(A.sim, pol, sc());
+  A.draft = null;
+  go(A.sim.q >= 8 ? 'reflect' : 'play');
+});
+
+render();
+</script>
+</body>
+</html>
